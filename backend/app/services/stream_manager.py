@@ -8,7 +8,10 @@ import logging
 import json
 from .camera import Camera
 from .event_processor import EventProcessor, Event
+from .object_detector import ObjectDetector
 from ..core.config import settings
+from .behavior_analyzer import BehaviorAnalyzer
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +21,8 @@ class StreamManager:
         self.active_connections: Dict[str, Set[WebSocket]] = {}
         self._stream_tasks: Dict[str, asyncio.Task] = {}
         self.event_processor = EventProcessor()
+        self.object_detector = ObjectDetector()
+        self.behavior_analyzer = BehaviorAnalyzer()
 
     async def connect(self, camera_id: str, websocket: WebSocket):
         """建立 WebSocket 連接
@@ -118,6 +123,37 @@ class StreamManager:
 
                     frame, quality = result
 
+                    # 執行物件偵測
+                    detections = self.object_detector.detect(frame)
+
+                    # 執行行為分析
+                    if settings.BEHAVIOR_TRACKING_ENABLED and detections:
+                        behavior_results = self.behavior_analyzer.update(detections)
+
+                        # 處理行為分析警報
+                        for alert in behavior_results["alerts"]:
+                            event = Event(
+                                type=EventType.BEHAVIOR_ALERT,
+                                level=EventLevel.WARNING,
+                                camera_id=camera_id,
+                                timestamp=time.time(),
+                                details={
+                                    "alert_type": alert["type"],
+                                    "object_id": alert["object_id"],
+                                    "location": alert["location"],
+                                    **alert
+                                }
+                            )
+                            await self.broadcast_event(camera_id, event)
+
+                    # 生成場景描述
+                    scene_description = self.object_detector.get_scene_description(detections)
+                    spatial_relationships = self.object_detector.analyze_spatial_relationships(detections)
+
+                    # 在影像上繪製偵測結果
+                    if settings.DRAW_DETECTIONS and detections:
+                        frame = self.object_detector.draw_detections(frame, detections)
+
                     # 處理影像幀並產生事件
                     events = self.event_processor.process_frame(camera, frame, quality)
 
@@ -146,6 +182,20 @@ class StreamManager:
                             "contrast": quality.contrast,
                             "blur_score": quality.blur_score,
                             "overall_score": quality.get_overall_score()
+                        },
+                        "detections": [
+                            {
+                                "class_name": det.class_name,
+                                "confidence": det.confidence,
+                                "bbox": det.bbox
+                            }
+                            for det in detections
+                        ],
+                        "scene_description": scene_description,
+                        "spatial_relationships": spatial_relationships,
+                        "behavior_analysis": {
+                            "tracked_objects": behavior_results["tracked_objects"],
+                            "interactions": behavior_results["interactions"]
                         }
                     }
 

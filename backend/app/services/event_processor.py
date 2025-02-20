@@ -17,13 +17,14 @@ class EventType(Enum):
     CAMERA_OFFLINE = "camera_offline"    # 攝影機離線
     OBJECT_DETECTED = "object_detected"  # 物件偵測
     SCENE_CHANGE = "scene_change"        # 場景變化
+    BEHAVIOR_ALERT = "behavior_alert"    # 行為警報
 
 class EventLevel(Enum):
     """事件等級"""
-    INFO = "info"
-    WARNING = "warning"
-    ALERT = "alert"
-    CRITICAL = "critical"
+    INFO = "info"           # 一般資訊
+    WARNING = "warning"     # 警告
+    ERROR = "error"        # 錯誤
+    CRITICAL = "critical"  # 緊急
 
 @dataclass
 class Event:

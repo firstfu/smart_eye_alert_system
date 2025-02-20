@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, List
 import os
 from dotenv import load_dotenv
 from functools import lru_cache
@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     CLAHE_CLIP_LIMIT: float = 3.0  # CLAHE 限制值
     SHARPNESS_FACTOR: float = 1.5  # 銳化強度
 
+    # 物件偵測設定
+    YOLO_MODEL_PATH: str = "models/yolov8n.pt"  # YOLO 模型路徑
+    DETECTION_INTERVAL: float = 0.5  # 偵測間隔（秒）
+    DETECTION_CONFIDENCE: float = 0.25  # 偵測信心度閾值
+    MAX_DETECTIONS: int = 50  # 每幀最大偵測數量
+    ENABLE_GPU: bool = True  # 是否啟用 GPU
+    DRAW_DETECTIONS: bool = True  # 是否在串流中繪製偵測結果
+    DETECTION_CLASSES: List[str] = []  # 要偵測的類別（空列表表示全部類別）
+
     # 攝影機設定
     MAX_CAMERAS: int = 16  # 最大攝影機數量
     CAMERA_RECONNECT_ATTEMPTS: int = 3  # 重連嘗試次數
@@ -76,6 +85,16 @@ class Settings(BaseSettings):
     SCENE_ANALYSIS_INTERVAL = 10  # 場景分析間隔（秒）
     MIN_CONFIDENCE_THRESHOLD = 0.6  # 最小信心度閾值
     RISK_ALERT_THRESHOLD = 0.8     # 風險警報閾值
+
+    # 行為分析設定
+    BEHAVIOR_TRACKING_ENABLED: bool = True
+    MAX_TRAJECTORY_LENGTH: int = 50
+    STATIONARY_THRESHOLD: float = 0.1
+    INTERACTION_DISTANCE: float = 100.0
+    FALLEN_ANGLE_THRESHOLD: float = 45.0
+    RAPID_MOVEMENT_THRESHOLD: float = 5.0
+    LONG_STATIONARY_THRESHOLD: float = 300.0  # 秒
+    INTERACTION_TIMEOUT: float = 5.0  # 秒
 
     class Config:
         env_file = ".env"
