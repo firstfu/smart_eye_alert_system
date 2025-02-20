@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .endpoints import camera
+from .endpoints import camera, cameras
 
 api_router = APIRouter()
 
@@ -8,4 +8,10 @@ api_router.include_router(
     camera.router,
     prefix="/camera",
     tags=["camera"]
+)
+
+api_router.include_router(
+    cameras.router,
+    prefix="/cameras",
+    tags=["cameras"]
 )
