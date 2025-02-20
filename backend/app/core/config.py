@@ -64,6 +64,19 @@ class Settings(BaseSettings):
     # 通知設定
     LINE_NOTIFY_TOKEN: Optional[str] = None
 
+    # LLM 設定
+    LLM_MODEL = "gpt-4"
+    OPENAI_API_KEY = ""  # 需要從環境變數讀取
+    OPENAI_API_BASE = "https://api.openai.com/v1"
+    LLM_CACHE_SIZE = 1000  # 快取大小
+    LLM_CACHE_TTL = 300   # 快取存活時間（秒）
+    LLM_RATE_LIMIT = 20   # 每分鐘最大請求數
+
+    # 場景分析設定
+    SCENE_ANALYSIS_INTERVAL = 10  # 場景分析間隔（秒）
+    MIN_CONFIDENCE_THRESHOLD = 0.6  # 最小信心度閾值
+    RISK_ALERT_THRESHOLD = 0.8     # 風險警報閾值
+
     class Config:
         env_file = ".env"
         case_sensitive = True

@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .endpoints import camera, cameras, events
+from .endpoints import camera, cameras, events, analysis
 
 api_router = APIRouter()
 
@@ -21,4 +21,10 @@ api_router.include_router(
     events.router,
     prefix="/events",
     tags=["events"]
+)
+
+api_router.include_router(
+    analysis.router,
+    prefix="/analysis",
+    tags=["analysis"]
 )
