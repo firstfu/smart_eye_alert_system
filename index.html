@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>智慧眼睛警示系統</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>智慧眼睛警示系統</h1>
+        <div class="status-bar">
+          <span class="status-text">系統狀態: </span>
+          <span class="status-value" id="systemStatus">未啟動</span>
+        </div>
+      </header>
+
+      <main>
+        <div class="video-container">
+          <video id="videoFeed" autoplay playsinline>您的瀏覽器不支援視訊元素</video>
+          <div class="alert-overlay" id="alertOverlay">
+            <span class="alert-message">警示!</span>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button id="startBtn" class="btn primary">開始監測</button>
+          <button id="stopBtn" class="btn secondary" disabled>停止監測</button>
+        </div>
+
+        <div class="settings-panel">
+          <h2>系統設定</h2>
+          <div class="setting-item">
+            <label for="alertThreshold">警示閾值 (秒):</label>
+            <input type="number" id="alertThreshold" min="1" max="60" value="3" />
+          </div>
+          <div class="setting-item">
+            <label for="sensitivity">偵測靈敏度:</label>
+            <select id="sensitivity">
+              <option value="high">高</option>
+              <option value="medium" selected>中</option>
+              <option value="low">低</option>
+            </select>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <p>© 2024 智慧眼睛警示系統</p>
+      </footer>
+    </div>
+    <script src="script.js"></script>
+  </body>
+</html>
