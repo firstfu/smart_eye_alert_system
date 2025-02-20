@@ -1,10 +1,12 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from typing import List, Dict
 from ...services.camera_manager import CameraManager
+from ...services.stream_manager import StreamManager
 from ...core.config import settings
 
 router = APIRouter()
 camera_manager = CameraManager()
+stream_manager = StreamManager()
 
 @router.post("/cameras/{camera_id}")
 async def add_camera(camera_id: str):
@@ -49,8 +51,39 @@ async def reconnect_camera(camera_id: str):
         return {"message": f"成功重新連接攝影機 {camera_id}"}
     raise HTTPException(status_code=400, detail=f"無法重新連接攝影機 {camera_id}")
 
-@router.get("/cameras/{camera_id}/stream")
-async def get_camera_stream(camera_id: str):
-    """獲取攝影機串流（WebSocket）"""
-    # 這個端點將在之後實作 WebSocket 串流
-    raise HTTPException(status_code=501, detail="此功能尚未實作")
+@router.websocket("/ws/cameras/{camera_id}/stream")
+async def websocket_endpoint(websocket: WebSocket, camera_id: str):
+    """WebSocket 串流端點"""
+    camera = camera_manager.get_camera(camera_id)
+    if not camera:
+        await websocket.close(code=4004, reason=f"攝影機 {camera_id} 不存在")
+        return
+
+    # 檢查連接數量限制
+    if (camera_id in stream_manager.active_connections and
+        len(stream_manager.active_connections[camera_id]) >= settings.MAX_CONNECTIONS_PER_CAMERA):
+        await websocket.close(code=4003, reason="已達到最大連接數限制")
+        return
+
+    try:
+        await stream_manager.connect(camera_id, websocket)
+
+        # 等待連接關閉
+        try:
+            while True:
+                data = await websocket.receive_text()
+                # 這裡可以處理從客戶端接收的訊息
+                # 目前我們只是簡單地忽略它們
+        except WebSocketDisconnect:
+            pass
+        finally:
+            await stream_manager.disconnect(camera_id, websocket)
+
+    except Exception as e:
+        await websocket.close(code=4000, reason=str(e))
+
+@router.on_event("shutdown")
+async def shutdown_event():
+    """應用程式關閉時的清理工作"""
+    await stream_manager.cleanup()
+    await camera_manager.cleanup()

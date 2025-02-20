@@ -1,9 +1,10 @@
 import cv2
 import numpy as np
 import time
-from typing import Optional, Generator, Dict
+from typing import Optional, Generator, Dict, Tuple
 from dataclasses import dataclass
 from ..core.config import settings
+from .frame_cache import FrameCache, CachedFrame
 
 @dataclass
 class ImageQuality:
@@ -11,6 +12,30 @@ class ImageQuality:
     contrast: float
     blur_score: float
     timestamp: float
+
+    def get_overall_score(self) -> float:
+        """計算整體品質分數
+
+        Returns:
+            float: 品質分數 (0-100)
+        """
+        # 將各項指標正規化到 0-100 範圍
+        brightness_score = min(100, (self.brightness / 255.0) * 100)
+        contrast_score = min(100, (self.contrast / 128.0) * 100)
+        blur_score = min(100, (self.blur_score / 1000.0) * 100)
+
+        # 加權平均
+        weights = {
+            "brightness": 0.3,
+            "contrast": 0.3,
+            "blur": 0.4
+        }
+
+        return (
+            brightness_score * weights["brightness"] +
+            contrast_score * weights["contrast"] +
+            blur_score * weights["blur"]
+        )
 
 class Camera:
     def __init__(self, camera_id: str = "0"):
@@ -29,6 +54,7 @@ class Camera:
         self.reconnect_attempts = 0
         self.last_reconnect_time = 0
         self.is_connected = False
+        self.frame_cache = FrameCache()
 
     def __enter__(self):
         self.start()
@@ -69,6 +95,7 @@ class Camera:
         if self.cap and self.cap.isOpened():
             self.cap.release()
         self.is_connected = False
+        self.frame_cache.clear()
 
     def try_reconnect(self) -> bool:
         """嘗試重新連接攝影機
@@ -144,11 +171,11 @@ class Camera:
             self.frame_count = 0
             self.last_frame_time = current_time
 
-    def get_frame(self) -> Optional[np.ndarray]:
+    def get_frame(self) -> Optional[Tuple[np.ndarray, ImageQuality]]:
         """獲取單一影像幀
 
         Returns:
-            numpy.ndarray: 影像幀數據，如果讀取失敗則返回 None
+            Optional[Tuple[np.ndarray, ImageQuality]]: (影像幀數據, 品質評估結果)，如果讀取失敗則返回 None
         """
         if not self.is_connected:
             if not self.try_reconnect():
@@ -164,7 +191,27 @@ class Camera:
             return None
 
         self.update_fps()
-        return frame
+
+        # 評估影像品質
+        quality = self.assess_image_quality(frame)
+
+        # 將影像幀加入快取
+        self.frame_cache.add_frame(frame, quality.get_overall_score())
+
+        return frame, quality
+
+    def get_cached_frame(self, timestamp: Optional[float] = None) -> Optional[CachedFrame]:
+        """從快取中獲取影像幀
+
+        Args:
+            timestamp: 目標時間戳，如果為 None 則返回最新的影像幀
+
+        Returns:
+            Optional[CachedFrame]: 快取的影像幀，如果找不到則返回 None
+        """
+        if timestamp is None:
+            return self.frame_cache.get_latest_frame()
+        return self.frame_cache.get_frame_by_time(timestamp)
 
     def generate_frames(self) -> Generator[tuple[np.ndarray, ImageQuality], None, None]:
         """生成影像幀串流
@@ -173,17 +220,16 @@ class Camera:
             tuple[numpy.ndarray, ImageQuality]: 影像幀數據和品質評估結果
         """
         while True:
-            frame = self.get_frame()
-            if frame is None:
+            result = self.get_frame()
+            if result is None:
                 if not self.try_reconnect():
                     break
                 continue
 
+            frame, quality = result
+
             # 進行基本的影像處理
             frame = cv2.resize(frame, (settings.FRAME_WIDTH, settings.FRAME_HEIGHT))
-
-            # 評估影像品質
-            quality = self.assess_image_quality(frame)
 
             yield frame, quality
 
@@ -220,5 +266,6 @@ class Camera:
             "is_connected": self.is_connected,
             "reconnect_attempts": self.reconnect_attempts,
             "fps": self.fps,
-            "quality_stats": self.get_quality_stats()
+            "quality_stats": self.get_quality_stats(),
+            "cache_stats": self.frame_cache.get_stats()
         }
