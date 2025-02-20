@@ -8,6 +8,7 @@ from pathlib import Path
 from ultralytics import YOLO
 import torch
 from ..core.config import settings
+from .gpu_manager import GPUManager
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +26,14 @@ class ObjectDetector:
     def __init__(self):
         """初始化物件偵測器"""
         self.model = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.gpu_manager = GPUManager()
+        self.device = self.gpu_manager.get_optimal_device()
         self.class_names = []
         self.last_detection_time = 0
         self.detection_interval = settings.DETECTION_INTERVAL
         self.confidence_threshold = settings.DETECTION_CONFIDENCE
         self.model_path = Path(settings.YOLO_MODEL_PATH)
+        self.batch_size = settings.GPU_BATCH_SIZE
 
         self._load_model()
 
@@ -46,7 +49,6 @@ class ObjectDetector:
 
             # 移動模型到指定設備
             self.model.to(self.device)
-
             logger.info(f"模型載入完成，使用設備: {self.device}")
 
         except Exception as e:
@@ -69,8 +71,14 @@ class ObjectDetector:
             return []
 
         try:
+            # 預處理影像
+            if self.device.type == 'cuda':
+                input_tensor = self.gpu_manager.preprocess_for_gpu(frame)
+            else:
+                input_tensor = frame
+
             # 執行偵測
-            results = self.model(frame, verbose=False)[0]
+            results = self.model(input_tensor, verbose=False)[0]
             detected_objects = []
 
             # 處理偵測結果
@@ -81,7 +89,14 @@ class ObjectDetector:
 
                 class_id = int(box.cls[0])
                 class_name = results.names[class_id]
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
+
+                # 如果在 GPU 上，需要將座標移回 CPU
+                if box.xyxy.device.type == 'cuda':
+                    box_coords = box.xyxy[0].cpu().numpy()
+                else:
+                    box_coords = box.xyxy[0].numpy()
+
+                x1, y1, x2, y2 = map(int, box_coords)
 
                 detected_object = DetectedObject(
                     class_id=class_id,
@@ -98,6 +113,10 @@ class ObjectDetector:
         except Exception as e:
             logger.error(f"物件偵測失敗: {str(e)}")
             return []
+        finally:
+            # 清理 GPU 記憶體
+            if self.device.type == 'cuda':
+                torch.cuda.empty_cache()
 
     def draw_detections(self, frame: np.ndarray, detections: List[DetectedObject]) -> np.ndarray:
         """在影像上繪製偵測結果
@@ -109,6 +128,10 @@ class ObjectDetector:
         Returns:
             np.ndarray: 繪製完成的影像幀
         """
+        # 如果在 GPU 上，先將影像移回 CPU
+        if isinstance(frame, torch.Tensor) and frame.device.type == 'cuda':
+            frame = self.gpu_manager.postprocess_from_gpu(frame)
+
         result = frame.copy()
 
         for det in detections:
@@ -215,9 +238,24 @@ class ObjectDetector:
         Returns:
             Dict: 統計資訊
         """
-        return {
-            "model_device": self.device,
+        stats = {
+            "model_device": str(self.device),
             "last_detection_time": self.last_detection_time,
             "detection_interval": self.detection_interval,
-            "confidence_threshold": self.confidence_threshold
+            "confidence_threshold": self.confidence_threshold,
+            "batch_size": self.batch_size
         }
+
+        # 如果使用 GPU，添加 GPU 統計資訊
+        if self.device.type == 'cuda':
+            gpu_stats = self.gpu_manager.get_gpu_stats()
+            if gpu_stats:
+                current_gpu = gpu_stats[self.device.index]
+                stats.update({
+                    "gpu_memory_used": current_gpu.used_memory,
+                    "gpu_memory_total": current_gpu.total_memory,
+                    "gpu_temperature": current_gpu.temperature,
+                    "gpu_utilization": current_gpu.utilization
+                })
+
+        return stats

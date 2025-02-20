@@ -110,6 +110,33 @@ class Settings(BaseSettings):
     FALL_DETECTION_INTERVAL: float = 0.1  # 跌倒偵測間隔（秒）
     FALL_CONFIRMATION_FRAMES: int = 3  # 確認跌倒所需的連續幀數
 
+    # 執行緒池設定
+    CPU_CORES: int = os.cpu_count() or 4  # CPU 核心數
+    MAX_WORKERS: int = CPU_CORES * 2      # 最大工作執行緒數
+    TASK_QUEUE_SIZE: int = 1000           # 任務佇列大小
+    TASK_TIMEOUT: float = 30.0            # 任務超時時間（秒）
+
+    # 任務優先級設定
+    PRIORITY_HIGH: int = 1    # 高優先級（如跌倒偵測）
+    PRIORITY_NORMAL: int = 2  # 一般優先級（如物件偵測）
+    PRIORITY_LOW: int = 3     # 低優先級（如場景分析）
+
+    # 效能監控設定
+    STATS_UPDATE_INTERVAL: float = 5.0  # 統計資訊更新間隔（秒）
+    PERFORMANCE_LOG_INTERVAL: float = 60.0  # 效能日誌記錄間隔（秒）
+
+    # GPU 設定
+    GPU_MEMORY_FRACTION: float = 0.8  # GPU 記憶體使用上限比例
+    CUDA_VISIBLE_DEVICES: str = "0"  # 可見的 GPU 設備
+    GPU_BATCH_SIZE: int = 4  # GPU 批次處理大小
+    GPU_MEMORY_GROWTH: bool = True  # 是否允許 GPU 記憶體動態增長
+
+    # GPU 效能監控
+    GPU_STATS_INTERVAL: float = 5.0  # GPU 狀態更新間隔（秒）
+    GPU_TEMPERATURE_THRESHOLD: float = 80.0  # GPU 溫度警告閾值
+    GPU_MEMORY_THRESHOLD: float = 0.9  # GPU 記憶體使用警告閾值
+    GPU_UTILIZATION_THRESHOLD: float = 0.95  # GPU 使用率警告閾值
+
     class Config:
         env_file = ".env"
         case_sensitive = True
