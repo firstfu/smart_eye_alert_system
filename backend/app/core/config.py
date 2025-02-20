@@ -96,6 +96,20 @@ class Settings(BaseSettings):
     LONG_STATIONARY_THRESHOLD: float = 300.0  # 秒
     INTERACTION_TIMEOUT: float = 5.0  # 秒
 
+    # 姿態估計設定
+    POSE_DETECTION_CONFIDENCE: float = 0.5
+    POSE_TRACKING_CONFIDENCE: float = 0.5
+    POSE_MODEL_COMPLEXITY: int = 1
+    POSE_STATIC_IMAGE_MODE: bool = False
+    POSE_SMOOTH_LANDMARKS: bool = True
+
+    # 跌倒偵測參數
+    FALL_BODY_TILT_THRESHOLD: float = 60.0  # 身體傾斜角度閾值
+    FALL_HEIGHT_RATIO_THRESHOLD: float = 0.5  # 身體高度比例閾值
+    FALL_STABILITY_THRESHOLD: float = 0.3  # 穩定性分數閾值
+    FALL_DETECTION_INTERVAL: float = 0.1  # 跌倒偵測間隔（秒）
+    FALL_CONFIRMATION_FRAMES: int = 3  # 確認跌倒所需的連續幀數
+
     class Config:
         env_file = ".env"
         case_sensitive = True

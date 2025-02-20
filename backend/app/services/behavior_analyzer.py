@@ -7,6 +7,7 @@ from collections import deque
 import logging
 from .object_detector import DetectedObject
 from ..core.config import settings
+from .pose_estimator import PoseEstimator, PoseResult
 
 logger = logging.getLogger(__name__)
 
@@ -38,17 +39,20 @@ class BehaviorAnalyzer:
         """初始化行為分析器"""
         self.tracked_objects: Dict[int, TrackedObject] = {}
         self.next_id = 1
-        self.max_trajectory_length = 50
+        self.max_trajectory_length = settings.MAX_TRAJECTORY_LENGTH
         self.interactions: List[Interaction] = []
-        self.stationary_threshold = 0.1  # 靜止閾值
-        self.interaction_distance_threshold = 100  # 互動距離閾值（像素）
-        self.fallen_angle_threshold = 45  # 跌倒角度閾值
+        self.stationary_threshold = settings.STATIONARY_THRESHOLD
+        self.interaction_distance_threshold = settings.INTERACTION_DISTANCE
+        self.fallen_angle_threshold = settings.FALLEN_ANGLE_THRESHOLD
+        self.pose_estimator = PoseEstimator()
+        self.fall_detection_history: Dict[int, List[bool]] = {}  # 跌倒偵測歷史記錄
 
-    def update(self, detections: List[DetectedObject]) -> Dict:
+    def update(self, detections: List[DetectedObject], frame: np.ndarray) -> Dict:
         """更新物件追蹤和行為分析
 
         Args:
             detections: 偵測到的物件列表
+            frame: 當前影像幀
 
         Returns:
             Dict: 分析結果
@@ -58,11 +62,15 @@ class BehaviorAnalyzer:
         analysis_results = {
             "tracked_objects": [],
             "interactions": [],
-            "alerts": []
+            "alerts": [],
+            "poses": []
         }
 
         # 更新追蹤物件
         for detection in detections:
+            if detection.class_name != "person":
+                continue
+
             matched_id = self._match_detection(detection)
             if matched_id is None:
                 # 新物件
@@ -78,6 +86,7 @@ class BehaviorAnalyzer:
                     velocity=(0, 0),
                     state='moving'
                 )
+                self.fall_detection_history[matched_id] = []
             else:
                 # 更新現有物件
                 tracked_obj = self.tracked_objects[matched_id]
@@ -91,17 +100,40 @@ class BehaviorAnalyzer:
                     dy = (new_center[1] - old_center[1]) / dt
                     tracked_obj.velocity = (dx, dy)
 
-                # 更新狀態
-                speed = (dx**2 + dy**2)**0.5
-                if speed < self.stationary_threshold:
-                    tracked_obj.state = 'stationary'
-                else:
-                    tracked_obj.state = 'moving'
-
                 # 更新位置和時間
                 tracked_obj.current_bbox = detection.bbox
                 tracked_obj.last_seen = current_time
                 tracked_obj.trajectory.append(new_center)
+
+            # 執行姿態估計
+            x1, y1, x2, y2 = detection.bbox
+            person_frame = frame[y1:y2, x1:x2]
+            if person_frame.size > 0:  # 確保裁切區域有效
+                pose_result = self.pose_estimator.detect(person_frame)
+                if pose_result:
+                    # 分析姿態特徵
+                    pose_features = self.pose_estimator.analyze_pose(pose_result)
+
+                    # 判斷是否跌倒
+                    is_fallen = self._detect_fall(pose_features, matched_id)
+
+                    if is_fallen:
+                        self.tracked_objects[matched_id].state = 'fallen'
+                        alerts.append({
+                            "type": "fall_detected",
+                            "object_id": matched_id,
+                            "confidence": 0.9,  # 使用姿態估計提高了準確度
+                            "timestamp": current_time,
+                            "location": detection.bbox,
+                            "pose_features": pose_features
+                        })
+
+                    # 保存姿態分析結果
+                    analysis_results["poses"].append({
+                        "object_id": matched_id,
+                        "pose_features": pose_features,
+                        "confidence": pose_result.confidence
+                    })
 
             current_objects.add(matched_id)
 
@@ -345,3 +377,33 @@ class BehaviorAnalyzer:
             total_distance += distance
 
         return total_distance
+
+    def _detect_fall(self, pose_features: Dict[str, float], object_id: int) -> bool:
+        """使用姿態特徵偵測跌倒
+
+        Args:
+            pose_features: 姿態特徵
+            object_id: 物件ID
+
+        Returns:
+            bool: 是否檢測到跌倒
+        """
+        # 檢查關鍵特徵
+        is_fallen = (
+            pose_features["body_tilt"] > settings.FALL_BODY_TILT_THRESHOLD and
+            pose_features["height_ratio"] < settings.FALL_HEIGHT_RATIO_THRESHOLD and
+            pose_features["stability_score"] < settings.FALL_STABILITY_THRESHOLD
+        )
+
+        # 更新跌倒偵測歷史
+        self.fall_detection_history[object_id].append(is_fallen)
+
+        # 只保留最近的幀
+        if len(self.fall_detection_history[object_id]) > settings.FALL_CONFIRMATION_FRAMES:
+            self.fall_detection_history[object_id].pop(0)
+
+        # 檢查是否連續多幀都偵測到跌倒
+        if len(self.fall_detection_history[object_id]) >= settings.FALL_CONFIRMATION_FRAMES:
+            return all(self.fall_detection_history[object_id])
+
+        return False
